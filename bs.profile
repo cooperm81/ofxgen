@@ -5,6 +5,13 @@
 Separator = |
 Currency = EUR
 AccountType = SAVINGS
+Language = ESP
+
+[Date Information]
+# 1 = dd/mm/yyyy ("euro style")
+# 2 = mm/dd/yyyy ("u.s. style")
+InputDateFormat = 1
+OutputDateFormat = 2
 
 [Position Information]
 # data = field number. fields are zero based. so the line will look like this:

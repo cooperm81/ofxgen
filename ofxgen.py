@@ -15,6 +15,8 @@ ofx = {
     'COMPRESSION': 'NONE',
     'OLDFILEUID': 'NONE',
     'NEWFILEUID': 'NONE',
+    'DTSTART': "",
+    'DTEND': ""
 }
 
 # STEPS
@@ -62,7 +64,10 @@ def readprofile( filename ):
 # read the data transaction file
 #-----------------------------------
 def readdatafile( filename ):
-    transaction = {}
+    global ofx
+    transactionList = []
+    transactionInfo = {}
+
     try:
         if os.path.exists(filename):
             logging.debug("datafile does exist")
@@ -88,19 +93,49 @@ def readdatafile( filename ):
                     # split by separator
                     fields = line.split(profile['DEFAULT']['separator'])
                     transactionDate = fields[int(profile['Position Information']['TransactionDatePosition'])]
+                    if (int(profile['Date Information']['inputdateformat']) != int(profile['Date Information']['outputdateformat'])):
+                        # need to transform the dates
+                        logging.debug("transforming date \"{}\"".format(transactionDate))
+                        if (int(profile['Date Information']['inputdateformat']) == 1):
+                            # input is type 1 ("euro style")
+                            #print("type 1 input ")
+                            (day, month, year) = transactionDate.split("/")
+                        elif (int(profile['Date Information']['inputdateformat']) == 2):
+                            # input is type 2 ("u.s. style")
+                            #print("type 2 input ")
+                            (month, day, year) = transactionDate.split("/")
+                        if (int(profile['Date Information']['outputdateformat']) == 1):
+                            transactionDate = "{}/{}/{}".format(day,month,year)
+                        elif (int(profile['Date Information']['outputdateformat']) == 2):
+                            transactionDate = "{}/{}/{}".format(month,day,year)
+            
                     logging.debug("Transaction Date=\"%s\"", transactionDate)
-                    transaction['TransactionDate'] = transactionDate
+                    transactionInfo['TransactionDate'] = transactionDate
+                    transactionInfo['DTPOSTED'] = "{}{}{}000000".format(year,month,day)
+                    # check if this is the first transaction
+                    if (ofx['DTSTART'] == ""): #TODO: need to convert this to a proper date data structure and ensure the earliest date is used
+                        # earliest transaction
+                        ofx['DTSTART'] = "{}{}{}000000".format(year,month,day)
+
+                    ofx['DTEND'] = "{}{}{}000000".format(year,month,day)#TODO: need to convert this to a proper date data structure and ensure the latest date is used
+
                     transactionDescription = str(fields[int(profile['Position Information']['DescriptionPosition'])])
                     logging.debug("Transaction Description=\"%s\"", transactionDescription)
-                    transaction['TransactionDescription'] = transactionDescription
+                    transactionInfo['TransactionDescription'] = transactionDescription
                     transactionAmount = str(fields[int(profile['Position Information']['TransactionAmountPosition'])])
                     logging.debug("Transaction Amount=\"%s\"", transactionAmount)
-                    transaction['TransactionAmount'] = transactionAmount
+                    transactionInfo['TransactionAmount'] = transactionAmount
+                    if (float(transactionAmount) >= 0.0):
+                        transactionInfo['TransactionType'] = "CREDIT"
+                    else:
+                        transactionInfo['TransactionType'] = "DEBIT"
 
+                    transactionList.append(transactionInfo)
+                    transactionInfo = {}
         except IOError:
             print ("Could not read file: {}").format(filename)
 
-    return()
+    return(transactionList)
 
 def parsecommandline():
     parser = argparse.ArgumentParser(description='convert bank transaction data files into proper OFX files')
@@ -116,6 +151,7 @@ def parsecommandline():
 #-----------------------------------
 def writeheader():
     global ofx
+    global profile
     
     print("OFXHEADER:{}".format(ofx['OFXHEADER']))
     print("DATA:OFXSGML")
@@ -126,15 +162,71 @@ def writeheader():
     print("COMPRESSION:{}".format(ofx['COMPRESSION']))
     print("OLDILEUID:{}".format(ofx['OLDFILEUID']))
     print("NEWFILEUID:{}".format(ofx['NEWFILEUID']))
-    print("all the transaction magical goodness goes here ...")
-
+    print("\n")
+    print("<OFX>")
+    print("<SIGNONMSGSRSV1>")
+    print("<SONRS>")
+    print("<STATUS>")
+    print("\t<CODE>0")
+    print("\t<SEVERITY>INFO")
+    print("</STATUS>")
+    print("<DTSERVER>20160723000000") #TODO: hardcoded
+    print("<LANGUAGE>{}".format(profile['DEFAULT']['language']))
+    print("</SONRS>")
+    print("</SIGNONMSGSRSV1>")
+    print("<BANKMSGSRSV1>")
+    print("<STMTTRNRS>")
+    print("<TRNUID>0") #TODO: hardcoded
+    print("<STATUS>")
+    print("<CODE>0")
+    print("<SEVERITY>INFO")
+    print("</STATUS>")
+    print("<STMTRS>")
+    print("<CURDEF>{}".format(profile['DEFAULT']['currency']))
+    print("<BANKACCTFROM>")
+    print("<BANKID>000000000")#TODO: hardcoded
+    print("<ACCTID>111111111")#TODO: hardcoded
+    print("<ACCTTYPE>SAVINGS")#TODO: hardcoded
+    print("</BANKACCTFROM>")
+    print("<BANKTRANLIST>")
+    print("<DTSTART>{}".format(ofx['DTSTART']))
+    print("<DTEND>20160723000000")#TODO: hardcoded
     return()
+
+def writeoutputfile(transactionList):
+
+    # counter for internal purposes
+    i = 1
+    
+    # iterate through and print the transaction fields into the OFX file
+    for transactionInfo in transactionList:
+        #print("{}. {}".format(i, transactionInfo['TransactionDescription']))
+        i = i + 1
+        print("<STMTTRN>")          
+        print("\t<TRNTYPE>{}".format(transactionInfo['TransactionType']))
+        print("\t<DTPOSTED>{}".format(transactionInfo['DTPOSTED']))
+        print("\t<TRNAMT>{}".format(transactionInfo['TransactionAmount']))
+        print("\t<FITID>133") #TODO: hardcoded
+        print("\t<REFNUM>133") #TODO: hardcoded
+        print("\t<NAME>{}".format(transactionInfo['TransactionDescription']))
+        print("</STMTTRN>") #TODO: hardcoded
+
+        logging.info("Found {} transactions".format(i))
+
+    # close up all the fields
+    print("</BANKTRANLIST>")
+    print("</STMTRS>")
+    print("</STMTTRNRS>")
+    print("</BANKMSGSRSV1>")
+    print("</OFX>")
+    
+    return
 
 if __name__ == "__main__":
     logging.basicConfig(stream=sys.stdout, level=logging.ERROR)
     args = parsecommandline()
     profile = readprofile(args.profile)
-    readdatafile(args.datafile)
+    transactionList = readdatafile(args.datafile)
     writeheader()
-    #writeoutputfile()
+    writeoutputfile(transactionList)
     exit()
