@@ -126,13 +126,7 @@ def readdatafile( filename ):
                     logging.debug("Transaction Date=\"%s\"", transactionDate)
                     transactionInfo['TransactionDate'] = transactionDate
                     transactionInfo['DTPOSTED'] = "{}{}{}000000".format(year,month,day)
-                    # check if this is the first transaction
-                    # if (ofx['DTSTART'] == ""): #TODO: need to convert this to a proper date data structure and ensure the earliest date is used
-                    #     # earliest transaction
-                    #     ofx['DTSTART'] = "{}{}{}000000".format(year,month,day)
-
-                    # ofx['DTEND'] = "{}{}{}000000".format(year,month,day)#TODO: need to convert this to a proper date data structure and ensure the latest date is used
-
+                    
                     transactionDescription = str(fields[int(profile['Position Information']['DescriptionPosition'])])
                     # if needed, remove leading and trailing quotations
                     if (bool(profile['DEFAULT']['enclosedinquotes'])):
@@ -184,6 +178,10 @@ def parsecommandline():
     parser.add_argument("profile", help="the institution-specific profile to use for parsing the data file")
     parser.add_argument("datafile", help="the data transaction file downloaded from the financial institution")
     parser.add_argument("output", help="the filename of the .ofx file to create")
+    parser.add_argument("--verbose", help="increase verbosity of program output, does not affect output file contents",
+                    action="store_true")
+    parser.add_argument("--debug", help="turns on debug output, does not affect output file contents",
+                    action="store_true")
     args = parser.parse_args()
     logging.debug("user defined profile to be used: %s", args.profile)
     logging.debug("data file to be used: %s", args.datafile)
@@ -254,7 +252,7 @@ def writeoutputfile(transactionList):
         out.write("\t\t\t\t\t\t<NAME>{}\n".format(transactionInfo['TransactionDescription']))
         out.write("\t\t\t\t\t</STMTTRN>\n") 
 
-        logging.info("Found {} transactions".format(i))
+    logging.info("Found {} transactions".format(i))
 
     # close up all the fields
     out.write("\t\t\t\t</BANKTRANLIST>\n")
@@ -268,6 +266,14 @@ def writeoutputfile(transactionList):
 if __name__ == "__main__":
     logging.basicConfig(stream=sys.stdout, level=logging.ERROR)
     args = parsecommandline()
+
+    # adjust the logging level based on command-line preferences
+    if (args.verbose):
+        logging.getLogger().setLevel(logging.INFO)
+
+    if (args.debug):
+        logging.getLogger().setLevel(logging.DEBUG)
+
     try:
         out = open(args.output, 'w', errors='ignore')
         logging.info("Opening file {} for writing ofx output".format(args.output))
